@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Leaflet map styles (required for pins and controls) */
+@import "leaflet/dist/leaflet.css";
+
+/* Base layer: mobile-first, accessible tap targets (min 44px per architecture) */
+@layer base {
+  body {
+    @apply antialiased text-gray-900 bg-white min-h-screen;
+  }
+}
