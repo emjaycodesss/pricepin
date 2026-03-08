@@ -41,13 +41,13 @@ app.add_middleware(
 )
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
-    """Root path for monitors that hit the base URL; redirects to health."""
+    """Root path for monitors (UptimeRobot often uses HEAD)."""
     return {"status": "ok", "health": "/health"}
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     """Health check for Render / load balancers and UptimeRobot."""
     return {"status": "ok"}
