@@ -65,7 +65,7 @@ async def process_menu(
         )
 
     try:
-        items = extract_menu_from_image(image_bytes, content_type=content_type)
+        items = await extract_menu_from_image(image_bytes, content_type=content_type)
     except MistralRateLimitError as e:
         raise HTTPException(status_code=429, detail=str(e)) from e
     except MistralOcrError as e:

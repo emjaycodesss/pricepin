@@ -5,7 +5,7 @@
  */
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { processMenu, type ParsedMenuItem } from '../lib/api';
-import { fileToWebP, compressMenuPhoto } from '../lib/imageToWebp';
+import { compressMenuPhoto } from '../lib/imageToWebp';
 import { uploadMenuPhoto } from '../lib/menuPhotoUpload';
 import { saveMenuUpdateRow } from '../lib/menuPhotoUpload';
 
@@ -214,13 +214,12 @@ export function ReferenceExtractSection({
       setOcrError('Photo is not linked yet. Please wait a moment and try again.');
       return;
     }
-    // If Turnstile widget loaded and has a token, we send it; if widget failed (e.g. 110200, blocked), we send without token and API still allows the request.
+    // Send file as-is for speed (no client-side WebP conversion). API accepts JPEG/PNG/WebP and resizes server-side if needed.
     setOcrLoading(true);
     setOcrError(null);
     try {
-      const webpFile = await fileToWebP(slot.file);
       const form = new FormData();
-      form.append('file', webpFile);
+      form.append('file', slot.file);
       if (TURNSTILE_SITE_KEY && turnstileWidgetIdRef.current != null && window.turnstile) {
         const token = window.turnstile.getResponse(turnstileWidgetIdRef.current);
         if (token) form.append('turnstile_token', token);

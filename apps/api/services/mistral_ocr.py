@@ -4,6 +4,7 @@ Uses the dedicated OCR endpoint per https://docs.mistral.ai/api/endpoint/ocr
 with document_annotation_format + document_annotation_prompt for structured JSON.
 Returns list of dicts: category, item_name, price, description.
 """
+import asyncio
 import base64
 import io
 import json
@@ -15,10 +16,10 @@ import httpx
 
 from config import MISTRAL_API_KEY, MISTRAL_MODEL_ENV
 
-# Max dimension and size before we resize to reduce payload
-MAX_IMAGE_DIMENSION = 1536
-MAX_IMAGE_BYTES_BEFORE_RESIZE = 800 * 1024
-JPEG_QUALITY = 85
+# Resize before sending to Mistral so OCR is quicker (smaller payload, less work for model).
+MAX_IMAGE_DIMENSION = 1200
+MAX_IMAGE_BYTES_BEFORE_RESIZE = 500 * 1024
+JPEG_QUALITY = 82
 
 # OCR API: https://docs.mistral.ai/api/endpoint/ocr#operation-ocr_v1_ocr_post
 # Cookbook uses mistral-ocr-latest; override with MISTRAL_MODEL in .env if needed
@@ -161,7 +162,7 @@ def _resize_image_if_large(image_bytes: bytes, content_type: str) -> tuple[bytes
         return (image_bytes, content_type)
 
 
-def extract_menu_from_image(image_bytes: bytes, content_type: str = "image/jpeg") -> list[dict[str, Any]]:
+async def extract_menu_from_image(image_bytes: bytes, content_type: str = "image/jpeg") -> list[dict[str, Any]]:
     """
     Send image to Mistral OCR API (POST /v1/ocr) and return normalized menu items.
     Uses document_annotation_format json_schema + document_annotation_prompt for structured output.
@@ -170,7 +171,10 @@ def extract_menu_from_image(image_bytes: bytes, content_type: str = "image/jpeg"
     if not api_key:
         raise MistralOcrError("MISTRAL_API_KEY is not set")
 
-    image_bytes, content_type = _resize_image_if_large(image_bytes, content_type)
+    # Resize in thread pool so the event loop is not blocked (PIL is CPU-bound).
+    image_bytes, content_type = await asyncio.to_thread(
+        _resize_image_if_large, image_bytes, content_type
+    )
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     image_url = f"data:{content_type};base64,{b64}"
 
@@ -185,9 +189,9 @@ def extract_menu_from_image(image_bytes: bytes, content_type: str = "image/jpeg"
         "document_annotation_prompt": DOCUMENT_ANNOTATION_PROMPT,
     }
 
-    def _do_request() -> dict[str, Any]:
-        with httpx.Client(timeout=90.0) as client:
-            resp = client.post(
+    async def _do_request() -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            resp = await client.post(
                 MISTRAL_OCR_URL,
                 headers={
                     "Authorization": f"Bearer {api_key}",
@@ -203,7 +207,7 @@ def extract_menu_from_image(image_bytes: bytes, content_type: str = "image/jpeg"
                     wait_secs = 60
                 wait_secs = min(max(wait_secs, 30), 120)
                 time.sleep(wait_secs)
-                resp2 = client.post(
+                resp2 = await client.post(
                     MISTRAL_OCR_URL,
                     headers={
                         "Authorization": f"Bearer {api_key}",
@@ -217,7 +221,7 @@ def extract_menu_from_image(image_bytes: bytes, content_type: str = "image/jpeg"
             return resp.json()
 
     try:
-        data = _do_request()
+        data = await _do_request()
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
             raise MistralOcrError(
