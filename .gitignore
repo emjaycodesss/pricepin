@@ -44,6 +44,9 @@ coverage/
 .pytest_cache/
 htmlcov/
 
+# Vercel
+.vercel
+
 # Misc
 *.tsbuildinfo
 .cache/

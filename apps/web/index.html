@@ -2,9 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Favicon: same as navbar logo so tab/bookmark matches the app branding -->
+    <link rel="icon" type="image/png" href="/pricepin_logo.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="/pricepin_logo.png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/pricepin_logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PricePin — The Living Price Layer of the City</title>
+    <title>PricePin</title>
+    <!-- Raleway from Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Cloudflare Turnstile (explicit render for SPA). Site key in VITE_TURNSTILE_SITE_KEY. -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   </head>
   <body>
     <div id="root"></div>

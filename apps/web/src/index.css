@@ -1,13 +1,115 @@
+/* Mapbox GL CSS is imported in Map.tsx when the map is used. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Leaflet map styles (required for pins and controls) */
-@import "leaflet/dist/leaflet.css";
-
-/* Base layer: mobile-first, accessible tap targets (min 44px per architecture) */
+/* Base layer: Raleway as default font, mobile-first, accessible tap targets */
 @layer base {
   body {
-    @apply antialiased text-gray-900 bg-white min-h-screen;
+    @apply antialiased text-gray-900 bg-white min-h-screen font-sans;
   }
 }
+
+/* Hide Mapbox attribution "Improve this map" link; keep © Mapbox © OpenStreetMap. */
+.mapbox-improve-map {
+  display: none;
+}
+
+/* Single card for our popups: remove ALL Mapbox default popup styling so only our inner div is the card. */
+.mapboxgl-popup {
+  padding: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.mapboxgl-popup-content-wrapper {
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0;
+  max-width: none;
+  pointer-events: auto;
+}
+.mapboxgl-popup-content {
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  min-width: 0;
+  max-width: none;
+  pointer-events: auto;
+}
+/* Hide the default pointer so no extra shape appears under our card. */
+.mapboxgl-popup-tip {
+  display: none;
+}
+
+/* We use our own close button inside the card; hide Mapbox default to avoid double X. */
+.mapboxgl-popup-close-button {
+  display: none !important;
+}
+
+/* Focus: inputs use border color change; buttons/links use outline only (no ring) to avoid double border. */
+
+/* Safe area for notched devices: bottom sheet and fixed bottom CTAs */
+.safe-area-pb {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+/* Menu/rates list: hide scrollbar but keep scrolling (sidebar) */
+.menu-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.menu-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Bottom sheet: capture scroll so the page behind doesn’t move; smooth on iOS */
+.bottom-sheet-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.bottom-sheet-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Horizontal chip strips (e.g. mobile map header): hide scrollbar, keep scroll */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Sidebar detail (desktop): ensure the spot card + menu scroll when content is tall; hide scrollbar */
+.sidebar-detail-area {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sidebar-detail-area::-webkit-scrollbar {
+  display: none;
+}
+
+/* Menu editor: subtle fade-in for drop indicators */
+@keyframes menu-drop-indicator-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.menu-drop-indicator {
+  animation: menu-drop-indicator-in 0.15s ease-out forwards;
+}
+

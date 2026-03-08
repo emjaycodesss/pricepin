@@ -1,8 +1,13 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MapHub } from './pages/MapHub';
-import { Scanner } from './pages/Scanner';
-import { Verify } from './pages/Verify';
+import { AddFoodSpot } from './pages/AddFoodSpot';
+import { UpdateMenu } from './pages/UpdateMenu';
+import { AdminAuthGuard } from './pages/AdminAuthGuard';
+import { AdminDashboard } from './pages/AdminDashboard';
+import { AdminVerify } from './pages/AdminVerify';
+import { AdminFlags } from './pages/AdminFlags';
+import { AdminHistory } from './pages/AdminHistory';
 
 /** TanStack Query client for Supabase/API data fetching */
 const queryClient = new QueryClient({
@@ -12,8 +17,8 @@ const queryClient = new QueryClient({
 });
 
 /**
- * App shell: routes per README sitemap.
- * / — Map Hub; /upload/:restaurantId — Scanner; /verify — Verification.
+ * App shell: routes.
+ * / — Map Hub; /add-foodspot — Add Food Spot; /update-menu/:spotId — Update Menu (upload/capture + menu items).
  */
 function App() {
   return (
@@ -21,8 +26,14 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<MapHub />} />
-          <Route path="/upload/:restaurantId" element={<Scanner />} />
-          <Route path="/verify" element={<Verify />} />
+          <Route path="/add-foodspot" element={<AddFoodSpot />} />
+          <Route path="/update-menu/:spotId" element={<UpdateMenu />} />
+          <Route path="/admin-price-pin" element={<AdminAuthGuard><AdminDashboard /></AdminAuthGuard>} />
+          <Route path="/admin-price-pin/verify/:spotId" element={<AdminAuthGuard><AdminVerify /></AdminAuthGuard>} />
+          <Route path="/admin-price-pin/verify/update/:menuUpdateId" element={<AdminAuthGuard><AdminVerify /></AdminAuthGuard>} />
+          <Route path="/admin-price-pin/flags" element={<AdminAuthGuard><AdminFlags /></AdminAuthGuard>} />
+          <Route path="/admin-price-pin/history" element={<AdminAuthGuard><AdminHistory /></AdminAuthGuard>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

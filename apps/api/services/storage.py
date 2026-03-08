@@ -1,4 +1,4 @@
 """
-Supabase Storage: upload raw menu image; path convention menus/{anon_user_id}/{timestamp}.jpg.
+Supabase Storage: menu and storefront images.
+Uploads are done from the frontend (menu_photos and storefronts buckets). This module is reserved for any future server-side storage helpers.
 """
-# TODO: Supabase client (service role); upload bytes; return public or signed URL for image_url
