@@ -23,6 +23,12 @@ TURNSTILE_SECRET = os.getenv("TURNSTILE_SECRET", "")
 # Admin: token validated server-side; never put in frontend bundle. Set ADMIN_TOKEN in API .env.
 ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 
-# CORS: comma-separated origins for production (e.g. https://your-app.vercel.app). Default localhost for dev.
-_CORS_ORIGINS_STR = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").strip()
-CORS_ORIGINS = [o.strip() for o in _CORS_ORIGINS_STR.split(",") if o.strip()]
+# CORS: allowed origins (no trailing slashes). You can set both; FRONTEND_URL is added to the list.
+_CORS_ORIGINS_STR = (os.getenv("CORS_ORIGINS") or "").strip()
+_FRONTEND_URL = (os.getenv("FRONTEND_URL") or "").strip()
+_origins = [o.strip().rstrip("/") for o in _CORS_ORIGINS_STR.split(",") if o.strip()]
+if _FRONTEND_URL:
+    _u = _FRONTEND_URL.rstrip("/")
+    if _u not in _origins:
+        _origins.append(_u)
+CORS_ORIGINS = _origins if _origins else ["http://localhost:5173", "http://127.0.0.1:5173"]

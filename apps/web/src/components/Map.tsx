@@ -2,6 +2,7 @@
  * Full-screen Mapbox GL JS map (react-map-gl). Vector tiles, Markers, Popup, center pin overlay.
  * Clustering: spots within ~100m (e.g. inside a mall) → one node with count; click opens Location Directory list.
  * Token from VITE_MAPBOX_ACCESS_TOKEN (apps/web/.env) or __MAPBOX_ACCESS_TOKEN__ (vite define).
+ * Note: events.mapbox.com may be blocked by ad blockers (ERR_BLOCKED_BY_CLIENT); the map still works.
  * @see https://docs.mapbox.com/mapbox-gl-js/
  * @see https://visgl.github.io/react-map-gl/
  */

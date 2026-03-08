@@ -3,11 +3,11 @@
  * Location comes from the main map (center pin). Form: name, address (from map), category, optional storefront photo.
  * No asterisks for required fields; optional photo explicitly labeled.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { reverseGeocode } from '../lib/photon';
+import { reverseGeocode, searchAddress } from '../lib/photon';
 import { fileToWebP } from '../lib/imageToWebp';
 
 const DEFAULT_LAT = 7.0731;
@@ -81,11 +81,20 @@ export function AddFoodSpot() {
   const lngNum = initialLng ? parseFloat(initialLng) : DEFAULT_LNG;
   const validLat = !Number.isNaN(latNum);
   const validLng = !Number.isNaN(lngNum);
-  const lat = validLat ? latNum : DEFAULT_LAT;
-  const lng = validLng ? lngNum : DEFAULT_LNG;
+  const initialLatVal = validLat ? latNum : DEFAULT_LAT;
+  const initialLngVal = validLng ? lngNum : DEFAULT_LNG;
+
+  /** Synced with map pin: from URL on load; updated when user edits address and we forward-geocode. Used for submit and for passing center back to map. */
+  const [pinLat, setPinLat] = useState(initialLatVal);
+  const [pinLng, setPinLng] = useState(initialLngVal);
+  const lat = pinLat;
+  const lng = pinLng;
 
   const [address, setAddress] = useState(addSpotForm?.address ?? passedAddress);
   const [addressLoading, setAddressLoading] = useState(false);
+  /** Shown under address field when forward geocode finds no result (pin not moved). */
+  const [addressGeocodeError, setAddressGeocodeError] = useState<string | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
   const [name, setName] = useState(addSpotForm?.name ?? '');
   const [category, setCategory] = useState<string>(addSpotForm?.category ?? '');
   const [floorLevel, setFloorLevel] = useState<string>(addSpotForm?.floorLevel ?? '');
@@ -95,6 +104,16 @@ export function AddFoodSpot() {
   const [error, setError] = useState<string | null>(null);
   /** Start false so first paint is hidden; then transition in (avoids animation not visible on nav). */
   const [pageVisible, setPageVisible] = useState(false);
+
+  /** Sync pin coordinates from URL when search params change (e.g. initial load). */
+  useEffect(() => {
+    const latParam = searchParams.get('lat');
+    const lngParam = searchParams.get('lng');
+    const parsedLat = latParam ? parseFloat(latParam) : null;
+    const parsedLng = lngParam ? parseFloat(lngParam) : null;
+    if (parsedLat != null && !Number.isNaN(parsedLat)) setPinLat(parsedLat);
+    if (parsedLng != null && !Number.isNaN(parsedLng)) setPinLng(parsedLng);
+  }, [searchParams]);
 
   /** Trigger page-enter transition on next frame so initial state is painted first. */
   useEffect(() => {
@@ -121,6 +140,37 @@ export function AddFoodSpot() {
       cancelled = true;
     };
   }, [lat, lng, addSpotForm]);
+
+  /**
+   * Forward geocode address text via Photon (Philippines bbox); update pin coords and URL, or set "Location not found".
+   * Called on address blur and before Continue to add menu.
+   */
+  const syncAddressToPin = useCallback(async (): Promise<boolean> => {
+    const trimmed = address.trim();
+    if (!trimmed) {
+      setAddressGeocodeError(null);
+      return true;
+    }
+    setGeocoding(true);
+    setAddressGeocodeError(null);
+    try {
+      const results = await searchAddress(trimmed);
+      const first = results[0];
+      if (first) {
+        setPinLat(first.lat);
+        setPinLng(first.lng);
+        navigate(`/add-foodspot?lat=${first.lat}&lng=${first.lng}`, { replace: true });
+        return true;
+      }
+      setAddressGeocodeError('Location not found');
+      return false;
+    } catch {
+      setAddressGeocodeError('Location not found');
+      return false;
+    } finally {
+      setGeocoding(false);
+    }
+  }, [address, navigate]);
 
   const photoPreviewsRef = useRef<string[]>([]);
   photoPreviewsRef.current = photoPreviews;
@@ -225,6 +275,9 @@ export function AddFoodSpot() {
       return;
     }
 
+    /** Sync typed address to pin (forward geocode) so pin matches what user typed before we submit. */
+    await syncAddressToPin();
+
     setLoading(true);
     setError(null);
 
@@ -311,6 +364,7 @@ export function AddFoodSpot() {
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
         <Link
           to="/"
+          state={{ center: [lat, lng] as [number, number] }}
           className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#EA000B]"
           aria-label="Back to map"
         >
@@ -344,7 +398,7 @@ export function AddFoodSpot() {
             />
           </section>
 
-          {/* Address (from map) */}
+          {/* Address (from map); on blur or Continue we forward-geocode to sync pin. */}
           <section className="rounded-2xl bg-white p-4">
             <label htmlFor="address" className={labelClass}>
               Address
@@ -354,7 +408,13 @@ export function AddFoodSpot() {
               id="address"
               type="text"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                setAddress(e.target.value);
+                setAddressGeocodeError(null);
+              }}
+              onBlur={() => {
+                if (address.trim()) syncAddressToPin();
+              }}
               placeholder={addressLoading ? 'Loading address…' : 'Street, barangay, city'}
               className={inputClass}
               required
@@ -363,6 +423,14 @@ export function AddFoodSpot() {
             />
             {addressLoading && (
               <p className="mt-1.5 text-xs text-gray-500">Loading address…</p>
+            )}
+            {geocoding && (
+              <p className="mt-1.5 text-xs text-gray-500">Looking up location…</p>
+            )}
+            {addressGeocodeError && (
+              <p className="mt-1.5 text-xs text-red-600" role="alert">
+                {addressGeocodeError}
+              </p>
             )}
           </section>
 

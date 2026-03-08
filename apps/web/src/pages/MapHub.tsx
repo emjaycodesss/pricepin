@@ -124,6 +124,18 @@ export function MapHub() {
     navigate(location.pathname, { replace: true, state: {} });
   }, [focusSpotId, foodSpots, navigate, location.pathname]);
 
+  /** When returning from Add Food Spot with synced address: fly map to that center (map.flyTo via center/zoom). */
+  const centerFromState = (location.state as { center?: [number, number] } | null)?.center;
+  useEffect(() => {
+    if (!centerFromState || centerFromState.length < 2) return;
+    const [lat, lng] = centerFromState;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+    setCenter([lat, lng]);
+    setZoom(15);
+    setSelectedRestaurant(null);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [centerFromState?.[0], centerFromState?.[1], navigate, location.pathname]);
+
   return (
     <div className="relative flex flex-col tablet:flex-row h-screen w-full overflow-hidden">
       {/* Mobile: header with search only; filters live in bottom sheet */}
