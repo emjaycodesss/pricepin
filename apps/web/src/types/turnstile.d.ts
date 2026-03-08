@@ -7,7 +7,13 @@ declare global {
     turnstile?: {
       render: (
         container: string | HTMLElement,
-        options: { sitekey: string; theme?: 'light' | 'dark'; size?: 'normal' | 'compact' }
+        options: {
+          sitekey: string;
+          theme?: 'light' | 'dark';
+          size?: 'normal' | 'compact';
+          /** Called when widget fails (e.g. 110200, blocked). We use it to allow scan without token. */
+          'error-callback'?: () => void;
+        }
       ) => string;
       getResponse: (widgetId: string) => string;
       reset: (widgetId?: string) => void;

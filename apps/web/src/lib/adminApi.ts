@@ -3,7 +3,8 @@
  * Backend validates token and uses service role; RLS no longer allows anon to perform these mutations.
  */
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+/** Base API URL (no trailing slash) so paths never get double slashes. */
+const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '');
 const ADMIN_TOKEN_KEY = 'pricepin_admin_token';
 
 function getAdminToken(): string | null {

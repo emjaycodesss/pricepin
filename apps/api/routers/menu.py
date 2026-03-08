@@ -35,8 +35,8 @@ async def process_menu(
             detail="Mistral OCR is not configured. Set MISTRAL_API_KEY in the API .env.",
         )
 
-    # Turnstile: when secret is set, token is required and verified
-    if (TURNSTILE_SECRET or "").strip():
+    # Turnstile: when secret is set and client sent a token, verify it. If no token (widget blocked or failed), allow request anyway so scanning still works.
+    if (TURNSTILE_SECRET or "").strip() and (turnstile_token or "").strip():
         ok, err = verify_turnstile_token(
             (turnstile_token or "").strip(),
             remote_ip=request.client.host if request.client else None,

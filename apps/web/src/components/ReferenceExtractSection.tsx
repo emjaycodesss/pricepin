@@ -58,21 +58,37 @@ export function ReferenceExtractSection({
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  /** When Turnstile fails (e.g. 110200, blocked), we hide the widget and allow scan without token. */
+  const [turnstileUnavailable, setTurnstileUnavailable] = useState(false);
+
+  /** When photo count changes, allow Turnstile to be shown again (retry after widget error). */
+  const prevSlotsLen = useRef(slots.length);
+  useEffect(() => {
+    if (slots.length !== prevSlotsLen.current) {
+      prevSlotsLen.current = slots.length;
+      setTurnstileUnavailable(false);
+    }
+  }, [slots.length]);
 
   /** Render Turnstile widget when we have site key and at least one slot. Script loads async from index.html. */
   useEffect(() => {
-    if (!TURNSTILE_SITE_KEY || slots.length === 0 || !turnstileContainerRef.current) return;
+    if (!TURNSTILE_SITE_KEY || slots.length === 0 || !turnstileContainerRef.current || turnstileUnavailable) return;
     const render = () => {
       if (!window.turnstile || !turnstileContainerRef.current) return;
       if (turnstileWidgetIdRef.current != null) {
         window.turnstile.remove(turnstileWidgetIdRef.current);
         turnstileWidgetIdRef.current = null;
       }
-      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
-        sitekey: TURNSTILE_SITE_KEY,
-        theme: 'light',
-        size: 'normal',
-      });
+      try {
+        turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          theme: 'light',
+          size: 'normal',
+          'error-callback': () => setTurnstileUnavailable(true),
+        } as Parameters<NonNullable<typeof window.turnstile>['render']>[1]);
+      } catch {
+        setTurnstileUnavailable(true);
+      }
     };
     if (window.turnstile) {
       render();
@@ -97,7 +113,7 @@ export function ReferenceExtractSection({
         turnstileWidgetIdRef.current = null;
       }
     };
-  }, [slots.length]);
+  }, [slots.length, turnstileUnavailable]);
 
   /** Clamp activeIndex when slots change. */
   useEffect(() => {
@@ -198,16 +214,7 @@ export function ReferenceExtractSection({
       setOcrError('Photo is not linked yet. Please wait a moment and try again.');
       return;
     }
-    if (TURNSTILE_SITE_KEY) {
-      const token =
-        turnstileWidgetIdRef.current != null && window.turnstile
-          ? window.turnstile.getResponse(turnstileWidgetIdRef.current)
-          : '';
-      if (!token || !token.trim()) {
-        setOcrError('Please complete the verification below, then try again.');
-        return;
-      }
-    }
+    // If Turnstile widget loaded and has a token, we send it; if widget failed (e.g. 110200, blocked), we send without token and API still allows the request.
     setOcrLoading(true);
     setOcrError(null);
     try {
@@ -365,9 +372,13 @@ export function ReferenceExtractSection({
         </div>
       )}
 
-      {/* Turnstile widget: shown when site key is set and there are photos. User must complete before Scan. */}
+      {/* Turnstile widget when site key is set and there are photos. If widget errors (e.g. 110200), show fallback so user can still scan. */}
       {activeSlot && TURNSTILE_SITE_KEY && (
-        <div ref={turnstileContainerRef} className="mt-2 flex justify-center shrink-0" aria-label="Verification" />
+        turnstileUnavailable ? (
+          <p className="mt-2 text-xs text-gray-500 shrink-0">Verification unavailable. You can still scan.</p>
+        ) : (
+          <div ref={turnstileContainerRef} className="mt-2 flex justify-center shrink-0" aria-label="Verification" />
+        )
       )}
 
       {/* Scan this Image — prominent CTA; shrink-0 so image viewer gets flex space above; reduced mt to reclaim space */}

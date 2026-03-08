@@ -3,7 +3,8 @@
  * process-menu: upload image path + Turnstile token → parsed menu JSON.
  */
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+/** Base API URL (no trailing slash) so paths like /process-menu never become //process-menu. */
+const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '');
 
 export interface ParsedMenuItem {
   category?: string;
