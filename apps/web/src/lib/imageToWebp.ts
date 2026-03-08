@@ -1,13 +1,14 @@
 /**
  * Convert an image File to WebP in the browser for smaller uploads and faster loading.
- * Uses Canvas API; falls back to JPEG if WebP is not supported (rare).
+ * Fast path: createImageBitmap (decode, often off main thread) then canvas draw + toBlob.
+ * Fallback: classic Image() + canvas for older or unsupported cases.
  */
 
 const MAX_DIMENSION = 1920;
 const WEBP_QUALITY = 0.85;
 
 /**
- * Load a blob into an HTMLImageElement (resolve when onload).
+ * Load a blob into an HTMLImageElement (resolve when onload). Fallback when createImageBitmap is not used.
  */
 function loadImage(blob: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -26,9 +27,67 @@ function loadImage(blob: Blob): Promise<HTMLImageElement> {
 }
 
 /**
+ * Compute target width/height so the longer edge is at most maxDimension; aspect ratio preserved.
+ */
+function scaleToMaxDimension(
+  w: number,
+  h: number,
+  maxDimension: number
+): { width: number; height: number } {
+  if (w <= maxDimension && h <= maxDimension) return { width: w, height: h };
+  if (w >= h) {
+    return { width: maxDimension, height: Math.round((h * maxDimension) / w) };
+  }
+  return { height: maxDimension, width: Math.round((w * maxDimension) / h) };
+}
+
+/**
+ * Fast path: decode with createImageBitmap (can be faster than Image()), draw at target size, toBlob.
+ * Reuses one canvas and avoids object URL. Caller must pass a File or Blob.
+ */
+async function compressWithImageBitmap(
+  file: File,
+  quality: number,
+  maxDimension: number
+): Promise<File | null> {
+  if (typeof createImageBitmap === 'undefined') return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const { width: w, height: h } = bitmap;
+    const { width, height } = scaleToMaxDimension(w, h, maxDimension);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close();
+      return null;
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const mime = 'image/webp';
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, mime, quality);
+    });
+    if (!blob) {
+      const jpegBlob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      });
+      if (!jpegBlob) return null;
+      const base = file.name.replace(/\.[^.]+$/, '');
+      return new File([jpegBlob], `${base}.jpg`, { type: 'image/jpeg' });
+    }
+    const base = file.name.replace(/\.[^.]+$/, '');
+    return new File([blob], `${base}.webp`, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Convert image file to WebP (or JPEG fallback). Resizes if larger than maxDimension.
- * Returns a new File so the original is unchanged.
- * @param maxDimension - Optional; defaults to MAX_DIMENSION (1920). Use lower (e.g. 1200) for menu photos.
+ * Prefers createImageBitmap when available for faster decode; falls back to Image() + canvas.
  */
 export async function fileToWebP(
   file: File,
@@ -37,20 +96,12 @@ export async function fileToWebP(
 ): Promise<File> {
   if (!file.type.startsWith('image/')) return file;
 
+  const fast = await compressWithImageBitmap(file, quality, maxDimension);
+  if (fast) return fast;
+
   const img = await loadImage(file);
   const { width: w, height: h } = img;
-
-  let width = w;
-  let height = h;
-  if (w > maxDimension || h > maxDimension) {
-    if (w >= h) {
-      width = maxDimension;
-      height = Math.round((h * maxDimension) / w);
-    } else {
-      height = maxDimension;
-      width = Math.round((w * maxDimension) / h);
-    }
-  }
+  const { width, height } = scaleToMaxDimension(w, h, maxDimension);
 
   const canvas = document.createElement('canvas');
   canvas.width = width;

@@ -41,9 +41,15 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root():
+    """Root path for monitors that hit the base URL; redirects to health."""
+    return {"status": "ok", "health": "/health"}
+
+
 @app.get("/health")
 def health():
-    """Health check for Render / load balancers."""
+    """Health check for Render / load balancers and UptimeRobot."""
     return {"status": "ok"}
 
 

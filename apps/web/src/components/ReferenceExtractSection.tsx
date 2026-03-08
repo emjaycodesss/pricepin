@@ -214,12 +214,13 @@ export function ReferenceExtractSection({
       setOcrError('Photo is not linked yet. Please wait a moment and try again.');
       return;
     }
-    // Send file as-is for speed (no client-side WebP conversion). API accepts JPEG/PNG/WebP and resizes server-side if needed.
+    // Flow: compress (WebP 1200px) → upload to API → Mistral OCR. Compression uses createImageBitmap when available for faster decode.
     setOcrLoading(true);
     setOcrError(null);
     try {
+      const compressed = await compressMenuPhoto(slot.file);
       const form = new FormData();
-      form.append('file', slot.file);
+      form.append('file', compressed);
       if (TURNSTILE_SITE_KEY && turnstileWidgetIdRef.current != null && window.turnstile) {
         const token = window.turnstile.getResponse(turnstileWidgetIdRef.current);
         if (token) form.append('turnstile_token', token);
