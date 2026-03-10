@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { reverseGeocode, searchAddress } from '../lib/photon';
+import { reverseGeocode, searchAddress, type PhotonSuggestion } from '../lib/photon';
 import { fileToWebP } from '../lib/imageToWebp';
 
 const DEFAULT_LAT = 7.0731;
@@ -36,6 +36,18 @@ const FLOOR_LEVELS = [
 ] as const;
 
 const STOREFRONT_BUCKET = 'storefronts';
+
+/** Debounce delay (ms) for address autocomplete — matches main map SearchBar. */
+const ADDRESS_DEBOUNCE_MS = 300;
+
+/** Clear (X) icon for address field. */
+function IconClear({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
 
 /** Extension and Supabase content type from the file we actually upload (WebP, JPEG, or PNG). */
 function getExtensionAndContentType(file: File): { ext: string; contentType: string } {
@@ -74,8 +86,16 @@ export function AddFoodSpot() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const floorLevelDropdownRef = useRef<HTMLDivElement>(null);
+  const addressSectionRef = useRef<HTMLDivElement>(null);
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [floorLevelOpen, setFloorLevelOpen] = useState(false);
+  /** Address autocomplete suggestions from Photon; only show dropdown when user is typing (input focused + suggestions). */
+  const [addressSuggestions, setAddressSuggestions] = useState<PhotonSuggestion[]>([]);
+  const [addressInputFocused, setAddressInputFocused] = useState(false);
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] = useState(false);
+  /** Dropdown visible only when user has focused the field and we have suggestions (autocomplete style). */
+  const showAddressDropdown = addressInputFocused && addressSuggestions.length > 0;
 
   const latNum = initialLat ? parseFloat(initialLat) : DEFAULT_LAT;
   const lngNum = initialLng ? parseFloat(initialLng) : DEFAULT_LNG;
@@ -121,7 +141,11 @@ export function AddFoodSpot() {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  /** Reverse geocode the pinned map location to show human-readable address. Skip when returning from Update Menu so we don't overwrite the saved address. */
+  /**
+   * Reverse geocode the pinned map location to show human-readable address.
+   * Skip when returning from Update Menu so we don't overwrite the saved address.
+   * When Photon returns null (e.g. remote area, sea), use lat,lng as fallback so the field is never "location not found".
+   */
   useEffect(() => {
     if (addSpotForm) {
       setAddressLoading(false);
@@ -131,7 +155,13 @@ export function AddFoodSpot() {
     setAddressLoading(true);
     reverseGeocode(lat, lng)
       .then((result) => {
-        if (!cancelled && result) setAddress(result);
+        if (cancelled) return;
+        if (result) {
+          setAddress(result);
+        } else {
+          /* No result from Photon (e.g. remote coords); fallback to coordinates only when we have no address yet (e.g. no passedAddress). */
+          setAddress((prev) => (prev.trim() ? prev : `${lat.toFixed(5)}, ${lng.toFixed(5)}`));
+        }
       })
       .finally(() => {
         if (!cancelled) setAddressLoading(false);
@@ -140,6 +170,59 @@ export function AddFoodSpot() {
       cancelled = true;
     };
   }, [lat, lng, addSpotForm]);
+
+  /**
+   * Debounced address autocomplete: when user types, fetch Photon suggestions.
+   * Dropdown is shown only when input is focused (see showAddressDropdown) so it behaves as autocomplete.
+   */
+  useEffect(() => {
+    const trimmed = address.trim();
+    if (!trimmed) {
+      setAddressSuggestions([]);
+      return;
+    }
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    addressDebounceRef.current = setTimeout(async () => {
+      setAddressSuggestionsLoading(true);
+      try {
+        const list = await searchAddress(trimmed, { lat: pinLat, lon: pinLng });
+        setAddressSuggestions(list);
+      } catch {
+        setAddressSuggestions([]);
+      } finally {
+        setAddressSuggestionsLoading(false);
+      }
+    }, ADDRESS_DEBOUNCE_MS);
+    return () => {
+      if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    };
+  }, [address, pinLat, pinLng]);
+
+  /** Apply address + pin only when user explicitly picks a suggestion (same as main map SearchBar select). */
+  const handleAddressSuggestionSelect = useCallback(
+    (s: PhotonSuggestion) => {
+      setAddressSuggestions([]);
+      setAddressInputFocused(false);
+      setAddress(s.displayName);
+      setPinLat(s.lat);
+      setPinLng(s.lng);
+      setAddressGeocodeError(null);
+      navigate(`/add-foodspot?lat=${s.lat}&lng=${s.lng}`, { replace: true });
+    },
+    [navigate]
+  );
+
+  /** Enter key: select first suggestion (same as main map SearchBar). */
+  const handleAddressKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== 'Enter') return;
+      if (showAddressDropdown && addressSuggestions.length > 0) {
+        e.preventDefault();
+        handleAddressSuggestionSelect(addressSuggestions[0]);
+      }
+    },
+    [showAddressDropdown, addressSuggestions, handleAddressSuggestionSelect]
+  );
 
   /**
    * Forward geocode address text via Photon (Philippines bbox); update pin coords and URL, or set "Location not found".
@@ -162,10 +245,10 @@ export function AddFoodSpot() {
         navigate(`/add-foodspot?lat=${first.lat}&lng=${first.lng}`, { replace: true });
         return true;
       }
-      setAddressGeocodeError('Location not found');
+      setAddressGeocodeError('No match found for this address; you can keep it and submit, or pick from the suggestions.');
       return false;
     } catch {
-      setAddressGeocodeError('Location not found');
+      setAddressGeocodeError('Lookup failed. You can keep this address and submit, or try picking from the suggestions.');
       return false;
     } finally {
       setGeocoding(false);
@@ -181,7 +264,7 @@ export function AddFoodSpot() {
     };
   }, []);
 
-  /** Close category and floor level dropdowns when clicking outside. */
+  /** Close category, floor level, and address dropdowns when clicking outside. */
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -190,6 +273,9 @@ export function AddFoodSpot() {
       }
       if (floorLevelDropdownRef.current && !floorLevelDropdownRef.current.contains(target)) {
         setFloorLevelOpen(false);
+      }
+      if (addressSectionRef.current && !addressSectionRef.current.contains(target)) {
+        setAddressInputFocused(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -398,31 +484,85 @@ export function AddFoodSpot() {
             />
           </section>
 
-          {/* Address (from map); on blur or Continue we forward-geocode to sync pin. */}
-          <section className="rounded-2xl bg-white p-4">
+          {/* Address: editable field; type to see suggestions, pick from dropdown to set location (same as main map SearchBar). */}
+          <section className="rounded-2xl bg-white p-4 relative" ref={addressSectionRef}>
             <label htmlFor="address" className={labelClass}>
               Address
             </label>
-            <p className="mb-2 text-xs text-gray-500">From the pinned location — edit if needed.</p>
-            <input
-              id="address"
-              type="text"
-              value={address}
-              onChange={(e) => {
-                setAddress(e.target.value);
-                setAddressGeocodeError(null);
-              }}
-              onBlur={() => {
-                if (address.trim()) syncAddressToPin();
-              }}
-              placeholder={addressLoading ? 'Loading address…' : 'Street, barangay, city'}
-              className={inputClass}
-              required
-              disabled={loading}
-              autoComplete="off"
-            />
+            <p className="mb-2 text-xs text-gray-500">Editable. Type to search; pick a suggestion to set the location.</p>
+            <div className="relative flex flex-col">
+              <div className="flex items-center rounded-xl border border-gray-200 bg-white focus-within:border-[#EA000B] focus-within:ring-2 focus-within:ring-[#EA000B]/20 transition-colors duration-150 min-h-[48px]">
+                <input
+                  id="address"
+                  type="text"
+                  value={address}
+                  onChange={(e) => {
+                    setAddress(e.target.value);
+                    setAddressGeocodeError(null);
+                  }}
+                  onBlur={() => setAddressInputFocused(false)}
+                  onFocus={() => setAddressInputFocused(true)}
+                  onKeyDown={handleAddressKeyDown}
+                  placeholder={addressLoading ? 'Loading address…' : 'Street, barangay, city'}
+                  className={`flex-1 min-w-0 border-0 bg-transparent px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 ${address.trim() ? 'rounded-l-xl' : 'rounded-xl'}`}
+                  required
+                  disabled={loading}
+                  autoComplete="off"
+                  aria-label="Address"
+                  aria-autocomplete="list"
+                  aria-expanded={showAddressDropdown}
+                  aria-controls="address-suggestions"
+                />
+                {address.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddress('');
+                      setAddressGeocodeError(null);
+                      setAddressSuggestions([]);
+                      setAddressInputFocused(false);
+                    }}
+                    className="flex items-center justify-center w-10 h-9 shrink-0 rounded-r-xl text-gray-500 hover:text-gray-800 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#EA000B] transition-colors"
+                    aria-label="Clear address"
+                  >
+                    <IconClear />
+                  </button>
+                ) : null}
+              </div>
+              {showAddressDropdown && (
+                <ul
+                  id="address-suggestions"
+                  className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-auto"
+                  role="listbox"
+                >
+                  {addressSuggestions.map((s, i) => (
+                    <li
+                      key={`${s.lat}-${s.lng}-${i}`}
+                      role="option"
+                      tabIndex={0}
+                      className="px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 first:rounded-t-lg last:rounded-b-lg"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleAddressSuggestionSelect(s);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleAddressSuggestionSelect(s);
+                        }
+                      }}
+                    >
+                      {s.displayName}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {addressLoading && (
               <p className="mt-1.5 text-xs text-gray-500">Loading address…</p>
+            )}
+            {addressSuggestionsLoading && (
+              <p className="mt-1.5 text-xs text-gray-500">Searching addresses…</p>
             )}
             {geocoding && (
               <p className="mt-1.5 text-xs text-gray-500">Looking up location…</p>
